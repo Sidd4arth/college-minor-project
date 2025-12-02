@@ -1,0 +1,10 @@
+{
+  "test123": {
+    "id": "test123",
+    "name": "Tester",
+    "ip": "192.168.1.6",
+    "port": 5050,
+    "lastSeen": 1764680962843,
+    "status": "offline"
+  }
+}
