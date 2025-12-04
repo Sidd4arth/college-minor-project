@@ -1,8 +1,10 @@
 // api.js
 const { ipcMain, BrowserWindow } = require("electron");
-const backend = require("./backend"); // ./backend/index.js
+const backend = require("./backend");
 
-// get-peers
+// -----------------------------------------------------
+// GET PEERS
+// -----------------------------------------------------
 ipcMain.handle("get-peers", async () => {
   try {
     return backend.getPeers();
@@ -12,22 +14,25 @@ ipcMain.handle("get-peers", async () => {
   }
 });
 
-// send-message
+
+// -----------------------------------------------------
+// SEND MESSAGE (CORE FIX APPLIED)
+// -----------------------------------------------------
+// The UI passes (recipientsArray, text)
+// Your message_sender.js expects: sendMessage(myInfo, recipientsArray, text)
 ipcMain.handle("send-message", async (ev, recipients, text) => {
-  if (!Array.isArray(recipients)) recipients = [recipients];
   try {
-    for (const id of recipients) {
-      // backend.sendMessage should be promise-aware
-      await backend.sendMessage(id, text);
-    }
-    return { ok: true };
+    return await backend.sendMessage(recipients, text);  // FIXED
   } catch (err) {
     console.error("[api] send-message error:", err);
     return { ok: false, error: err.message || String(err) };
   }
 });
 
-// forward peer updates from backend -> renderer(s)
+
+// -----------------------------------------------------
+// FORWARD PEER UPDATES TO UI
+// -----------------------------------------------------
 if (typeof backend.onPeerUpdate === "function") {
   backend.onPeerUpdate((peers) => {
     BrowserWindow.getAllWindows().forEach(win => {
@@ -36,27 +41,32 @@ if (typeof backend.onPeerUpdate === "function") {
   });
 }
 
-// forward incoming messages from backend -> renderer(s)
-// Try several hooks (be defensive).
+
+// -----------------------------------------------------
+// INCOMING MESSAGE FORWARDING
+// -----------------------------------------------------
 function forwardIncoming(msg) {
   BrowserWindow.getAllWindows().forEach(win => {
     try { win.webContents.send("incoming-message", msg); } catch {}
   });
 }
 
-// 1) If backend exposes a direct event emitter or function
+// 1) backend.onIncomingMessage (ideal)
 if (typeof backend.onIncomingMessage === "function") {
   backend.onIncomingMessage((msg) => forwardIncoming(msg));
-} else if (backend.tcpServer && typeof backend.tcpServer.on === "function") {
-  // 2) If backend exported tcpServer instance
-  backend.tcpServer.on("message", (msg /*, ip */) => forwardIncoming(msg));
-} else {
-  // 3) Last resort: if backend emits via events property (discovery had events)
-  if (backend.events && typeof backend.events.on === "function") {
-    backend.events.on("message", (msg) => forwardIncoming(msg));
-  } else {
-    console.warn("[api] No incoming-message hook found on backend; incoming messages will not be forwarded.");
-  }
+}
+// 2) If backend exposes tcpServer instance
+else if (backend.tcpServer && typeof backend.tcpServer.on === "function") {
+  backend.tcpServer.on("message", (msg, ip) => forwardIncoming(msg));
+}
+// 3) Last fallback (rare)
+else if (backend.events && typeof backend.events.on === "function") {
+  backend.events.on("message", (msg) => forwardIncoming(msg));
+}
+// No incoming messages available
+else {
+  console.warn("[api] No incoming-message hook found. Incoming chats won't appear.");
 }
 
-module.exports = {}; // nothing needed here
+
+module.exports = {};
